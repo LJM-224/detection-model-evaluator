@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 import webbrowser
 
 ROOT = Path(__file__).resolve().parent
+FROZEN = getattr(sys, 'frozen', False)
 
 
 class EvaluatorApp:
@@ -34,7 +35,8 @@ class EvaluatorApp:
         self.path_field(panel, 2, 'weights', '模型权重 .pt', '', 'model')
         self.path_field(panel, 3, 'input-dir', '数据集根目录', '', 'directory')
         self.path_field(panel, 4, 'data', 'data.yaml（可选）', '', 'yaml')
-        self.path_field(panel, 5, 'output-dir', '报告保存目录', str(ROOT/'results'), 'directory')
+        output_root = Path.home() / 'DetectionModelEvaluator' if FROZEN else ROOT
+        self.path_field(panel, 5, 'output-dir', '报告保存目录', str(output_root/'results'), 'directory')
         ttk.Label(panel, text='填写 data.yaml 后优先使用其路径与类别；否则自动识别目录并使用模型类别。').grid(row=6, column=0, columnspan=3, sticky='w', pady=6)
         params = ttk.LabelFrame(panel, text='评估参数', padding=10)
         params.grid(row=7, column=0, columnspan=3, sticky='ew', pady=10)
@@ -97,7 +99,7 @@ class EvaluatorApp:
         if not values['weights'] or not values['output-dir'] or not (values['data'] or values['input-dir']):
             messagebox.showerror('信息未填写完整', '请选择模型、测试集或配置文件，以及结果保存目录。')
             return
-        command = [sys.executable, '-u', str(ROOT/'evaluate_model.py')]
+        command = [sys.executable, '--evaluate'] if FROZEN else [sys.executable, '-u', str(ROOT/'evaluate_model.py')]
         for key, value in values.items():
             if value:
                 command.extend(['--'+key, value])
@@ -110,7 +112,7 @@ class EvaluatorApp:
         env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
         try:
             self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding='utf-8', errors='replace', cwd=ROOT, env=env,
+                text=True, encoding='utf-8', errors='replace', cwd=None if FROZEN else ROOT, env=env,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         except OSError as error:
             messagebox.showerror('无法启动', str(error))
@@ -187,4 +189,13 @@ def main():
 
 
 if __name__ == '__main__':
+    if FROZEN:
+        from multiprocessing import freeze_support
+
+        freeze_support()
+        if sys.argv[1:2] == ['--evaluate']:
+            del sys.argv[1]
+            from evaluate_model import main as evaluate
+
+            raise SystemExit(evaluate())
     main()

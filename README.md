@@ -2,6 +2,15 @@
 
 将 Ultralytics YOLO 目标检测 `.pt` 模型和带标注的数据集放入本地，通过桌面窗口或命令行评估。类别来自模型，不绑定具体行业。
 
+## 下载免安装包
+
+在 [GitHub Releases](https://github.com/LJM-224/detection-model-evaluator/releases) 下载对应平台的文件，并解压整个目录。需要使用有仓库访问权限的 GitHub 账号。
+
+- **Windows x64**：下载 `DetectionModelEvaluator-windows-x64.zip`，解压后双击 `DetectionModelEvaluator.exe`。
+- **Linux x64**：下载 `DetectionModelEvaluator-linux-x64.tar.gz`，用 `tar -xzf DetectionModelEvaluator-linux-x64.tar.gz` 解压，在桌面会话运行 `./DetectionModelEvaluator/DetectionModelEvaluator`。构建基线为 Ubuntu 22.04。
+
+免安装包内置 Python 和 CPU 运行依赖，需要自行准备模型和带标注的数据集。默认报告保存在用户目录下的 `DetectionModelEvaluator/results`，也可在界面中修改。包内第三方许可见 `_internal/licenses/`。
+
 ## 安装与启动
 
 建议使用 Python 3.11 或 3.12 的独立环境，并安装带 Tk 的标准 Python。

@@ -1,0 +1,75 @@
+name: Build desktop downloads
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            asset: DetectionModelEvaluator-windows-x64.zip
+            executable: DetectionModelEvaluator.exe
+          - runner: ubuntu-22.04
+            asset: DetectionModelEvaluator-linux-x64.tar.gz
+            executable: DetectionModelEvaluator
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install CPU dependencies and packager
+        run: |
+          python -m pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Check source and build
+        run: |
+          python -m unittest -v
+          python -m PyInstaller --noconfirm packaging/evaluator.spec
+      - name: Test packaged evaluation
+        run: python packaging/smoke_package.py dist/DetectionModelEvaluator/${{ matrix.executable }}
+      - name: Archive for Windows
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Path release | Out-Null
+          Compress-Archive -Path dist/DetectionModelEvaluator -DestinationPath release/${{ matrix.asset }}
+      - name: Archive for Linux
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release
+          tar -C dist -czf release/${{ matrix.asset }} DetectionModelEvaluator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.executable }}-${{ runner.os }}
+          path: release/${{ matrix.asset }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: gh release create "$VERSION_TAG" --verify-tag --title "$VERSION_TAG" --generate-notes release/*
