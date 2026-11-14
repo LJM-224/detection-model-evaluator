@@ -12,11 +12,9 @@ from typing import Any
 
 
 from common import calculate_sha256, write_json
-from dataset_checks import inspect_dataset, find_split, labels_for_images
+from dataset_checks import EXTENSIONS, inspect_dataset, find_split, labels_for_images
+from diagnostics import capture_validator, export_diagnostics
 from reporting import render_report
-
-
-SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +44,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--imgsz", type=int, default=640, help="评估输入尺寸")
     parser.add_argument("--conf", type=float, default=0.001, help="评估置信度下限")
+    parser.add_argument("--diagnostic-conf", type=float, default=None,
+                        help="逐图错例置信度阈值，默认取 0.25 和评估置信度下限中的较大值")
     parser.add_argument("--iou", type=float, default=0.70, help="NMS IoU 阈值")
     parser.add_argument("--batch", type=int, default=1, help="评估批大小")
     parser.add_argument("--device", default=None, help="评估设备，例如 0、cpu 或 cuda:0")
@@ -74,6 +74,9 @@ def validate_args(args: argparse.Namespace) -> tuple[Path, Path, Path | None, Pa
         raise FileNotFoundError(f"验证集目录不存在：{input_dir}")
     if not 0.0 <= args.conf <= 1.0:
         raise ValueError("conf 必须位于 0 到 1 之间")
+    diagnostic_conf = getattr(args, "diagnostic_conf", None)
+    if diagnostic_conf is not None and not args.conf <= diagnostic_conf <= 1.0:
+        raise ValueError("错例置信度必须介于评估置信度下限和 1 之间")
     if not 0.0 <= args.iou <= 1.0:
         raise ValueError("iou 必须位于 0 到 1 之间")
     if not 0.0 <= args.require_map50 <= 1.0:
@@ -115,7 +118,7 @@ def prepare_dataset(input_dir: Path, data_path: Path | None, split: str,
         images, labels = find_split(input_dir, split)
     stats = inspect_dataset(images, labels, len(names))
     for image in images.rglob("*"):
-        if image.suffix.lower() in SUPPORTED_EXTENSIONS and image.is_file():
+        if image.suffix.lower() in EXTENSIONS and image.is_file():
             with Image.open(image) as opened:
                 opened.verify()
     config = {"path": str(images.parent), "train": str(images),
@@ -335,7 +338,17 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     }
     if args.device:
         validation_args["device"] = args.device
-    metrics = model.val(**validation_args)
+    image_root = Path(config[args.split])
+    records = {}
+    metrics = model.val(validator=capture_validator(image_root, records), **validation_args)
+    expected_images = {
+        path.relative_to(image_root).as_posix()
+        for path in image_root.rglob("*") if path.suffix.lower() in EXTENSIONS and path.is_file()
+    }
+    missing_images = expected_images - records.keys()
+    if missing_images or len(records) != dataset_check["image_count"]:
+        examples = "、".join(sorted(missing_images)[:5])
+        raise ValueError(f"验证器未覆盖已检查的全部图片，缺少 {len(missing_images)} 张。{examples}")
     prediction_png_files = convert_prediction_images_to_png(Path(metrics.save_dir))
     payload = build_metrics_payload(
         metrics,
@@ -349,6 +362,11 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     )
     payload["prediction_png_files"] = prediction_png_files
     payload["output_directory"] = str(output_dir)
+    confidence = getattr(args, "diagnostic_conf", None)
+    if confidence is None:
+        confidence = max(0.25, args.conf)
+    print(f"正在生成 {len(records)} 张图片的逐图诊断…")
+    payload["diagnostics"] = export_diagnostics(records, image_root, config["names"], confidence, output_dir)
     write_metrics_files(payload, output_dir)
     render_report(payload, output_dir)
     return payload

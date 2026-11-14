@@ -23,14 +23,14 @@ class EvaluatorApp:
         self.report_dir = None
         self.events = queue.Queue()
         self.fields = {}
-        window.title('目标检测模型评估与分析软件 V1.0')
+        window.title('目标检测模型评估与分析软件 V1.1')
         window.geometry('980x800')
         window.minsize(820, 680)
         panel = ttk.Frame(window, padding=22)
         panel.pack(fill='both', expand=True)
         panel.columnconfigure(1, weight=1)
         ttk.Label(panel, text='目标检测模型评估', font=('Microsoft YaHei UI', 21, 'bold')).grid(row=0, column=0, columnspan=3, sticky='w', pady=(0, 8))
-        ttk.Label(panel, text='选择 YOLO .pt 模型和带标注测试集，生成指标、曲线及离线报告。').grid(row=1, column=0, columnspan=3, sticky='w', pady=(0, 15))
+        ttk.Label(panel, text='选择 YOLO .pt 模型和带标注测试集，生成指标、曲线和逐图错例报告。').grid(row=1, column=0, columnspan=3, sticky='w', pady=(0, 15))
         self.path_field(panel, 2, 'weights', '模型权重 .pt', '', 'model')
         self.path_field(panel, 3, 'input-dir', '数据集根目录', '', 'directory')
         self.path_field(panel, 4, 'data', 'data.yaml（可选）', '', 'yaml')
@@ -39,7 +39,8 @@ class EvaluatorApp:
         params = ttk.LabelFrame(panel, text='评估参数', padding=10)
         params.grid(row=7, column=0, columnspan=3, sticky='ew', pady=10)
         specs = [('split','数据划分','test'), ('imgsz','图片尺寸','640'), ('batch','批大小','1'),
-                 ('conf','置信度下限','0.001'), ('iou','NMS IoU','0.7'), ('require-map50','mAP50 达标阈值','0.8'), ('device','设备（cpu / 0）','cpu')]
+                 ('conf','评估置信度下限','0.001'), ('iou','NMS IoU','0.7'), ('require-map50','mAP50 达标阈值','0.8'),
+                 ('diagnostic-conf','错例置信度（可选）',''), ('device','设备（cpu / 0）','cpu')]
         for index, (key, title, default) in enumerate(specs):
             row, col = divmod(index, 4)
             box = ttk.Frame(params, padding=4)
@@ -58,7 +59,7 @@ class EvaluatorApp:
         self.start_button.pack(side='left')
         self.cancel_button = ttk.Button(actions, text='停止评估', command=self.cancel, state='disabled')
         self.cancel_button.pack(side='left', padx=8)
-        self.report_button = ttk.Button(actions, text='查看报告 / 预测图', command=self.open_report, state='disabled')
+        self.report_button = ttk.Button(actions, text='查看报告与错例', command=self.open_report, state='disabled')
         self.report_button.pack(side='left', padx=8)
         self.folder_button = ttk.Button(actions, text='打开结果文件夹', command=self.open_folder, state='disabled')
         self.folder_button.pack(side='left')

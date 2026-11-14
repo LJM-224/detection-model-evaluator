@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import unittest
 
 from dataset_checks import inspect_dataset, find_split
+from diagnostics import find_errors
 from evaluate_model import build_metrics_payload, prepare_dataset, write_metrics_files
 from reporting import render_report
 
@@ -87,6 +88,25 @@ class EvaluatorTests(unittest.TestCase):
         render_report(payload, self.root)
         self.assertIn('&lt;car&gt;', (self.root/'report.html').read_text(encoding='utf-8'))
         self.assertTrue((self.root/'metrics.csv').is_file())
+
+    def test_diagnostics_prioritize_same_class_and_use_one_to_one_matches(self):
+        """确认同类匹配优先并覆盖漏检、误检、类别混淆和置信度过滤。"""
+        truth = [
+            {"class_id": 0, "xyxy": [0, 0, 10, 10]},
+            {"class_id": 0, "xyxy": [20, 0, 30, 10]},
+            {"class_id": 0, "xyxy": [40, 0, 50, 10]},
+        ]
+        predictions = [
+            {"class_id": 1, "xyxy": [0, 0, 10, 10], "confidence": .9},
+            {"class_id": 0, "xyxy": [0, 0, 9, 10], "confidence": .8},
+            {"class_id": 1, "xyxy": [20, 0, 30, 10], "confidence": .7},
+            {"class_id": 0, "xyxy": [40, 0, 50, 10], "confidence": .2},
+        ]
+        self.assertEqual(find_errors(truth, predictions, .25), [
+            {"type": "confusion", "truth_index": 1, "prediction_index": 2, "iou": 1.0},
+            {"type": "missed", "truth_index": 2},
+            {"type": "false_positive", "prediction_index": 0},
+        ])
 
 
 if __name__ == '__main__':
